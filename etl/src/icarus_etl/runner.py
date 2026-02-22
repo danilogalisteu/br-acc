@@ -1,6 +1,18 @@
 import click
 from neo4j import GraphDatabase
 
+from icarus_etl.pipelines.cnpj import CNPJPipeline
+from icarus_etl.pipelines.sanctions import SanctionsPipeline
+from icarus_etl.pipelines.transparencia import TransparenciaPipeline
+from icarus_etl.pipelines.tse import TSEPipeline
+
+PIPELINES: dict[str, type] = {
+    "cnpj": CNPJPipeline,
+    "tse": TSEPipeline,
+    "transparencia": TransparenciaPipeline,
+    "sanctions": SanctionsPipeline,
+}
+
 
 @click.group()
 def cli() -> None:
@@ -17,13 +29,11 @@ def run(source: str, neo4j_uri: str, neo4j_user: str, neo4j_password: str, data_
     """Run an ETL pipeline."""
     driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
 
-    pipelines: dict[str, type] = {}
-
-    if source not in pipelines:
-        available = ", ".join(pipelines.keys()) if pipelines else "(none yet)"
+    if source not in PIPELINES:
+        available = ", ".join(PIPELINES.keys())
         raise click.ClickException(f"Unknown source: {source}. Available: {available}")
 
-    pipeline_cls = pipelines[source]
+    pipeline_cls = PIPELINES[source]
     pipeline = pipeline_cls(driver=driver, data_dir=data_dir)
     pipeline.run()
 
