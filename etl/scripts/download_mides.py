@@ -19,6 +19,9 @@ import click
 
 logger = logging.getLogger(__name__)
 
+LEGACY_DATASET = "basedosdados.br_mides"
+WORLD_WB_DATASET = "basedosdados.world_wb_mides"
+
 
 def _run_query_to_csv(
     billing_project: str,
@@ -69,7 +72,11 @@ def _write_manifest(out_dir: Path, tables: list[dict[str, Any]]) -> Path:
 
 @click.command()
 @click.option("--billing-project", default="icarus-corruptos", help="GCP billing project")
-@click.option("--dataset", default="basedosdados.br_mides", help="BigQuery dataset id")
+@click.option(
+    "--dataset",
+    default=WORLD_WB_DATASET,
+    help="BigQuery dataset id (supports br_mides and world_wb_mides)",
+)
 @click.option("--output-dir", default="./data/mides", help="Output directory")
 @click.option("--start-year", type=int, default=2021, help="Filter start year")
 @click.option("--end-year", type=int, default=2100, help="Filter end year")
@@ -87,21 +94,129 @@ def main(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    year_filter = (
-        f"WHERE SAFE_CAST(ano AS INT64) BETWEEN {start_year} AND {end_year}"
-    )
+    if "world_wb_mides" in dataset.lower():
+        profile = "world_wb_mides"
+        year_filter_licitacao = (
+            f"WHERE SAFE_CAST(l.ano AS INT64) BETWEEN {start_year} AND {end_year}"
+        )
+        year_filter_items = (
+            f"WHERE SAFE_CAST(i.ano AS INT64) BETWEEN {start_year} AND {end_year}"
+        )
+        year_filter_participante = (
+            f"WHERE SAFE_CAST(ano AS INT64) BETWEEN {start_year} AND {end_year}"
+        )
+        data_publicacao_expr = (
+            "CAST(COALESCE(l.data_publicacao_dispensa, l.data_edital, "
+            "l.data_abertura, l.data_homologacao) AS STRING)"
+        )
+        data_publicacao_filter = (
+            "AND (COALESCE(l.data_publicacao_dispensa, l.data_edital, "
+            "l.data_abertura, l.data_homologacao) IS NULL "
+            "OR COALESCE(l.data_publicacao_dispensa, l.data_edital, "
+            "l.data_abertura, l.data_homologacao) <= CURRENT_DATE() + INTERVAL 365 DAY)"
+        )
+        valor_estimado_expr = (
+            "CAST(COALESCE(l.valor_orcamento, l.valor, l.valor_corrigido) AS FLOAT64)"
+        )
+        valor_expr = (
+            "CAST(COALESCE(l.valor, l.valor_corrigido, l.valor_orcamento) AS FLOAT64)"
+        )
+        data_assinatura_expr = (
+            "CAST(COALESCE(l.data_homologacao, l.data_abertura, l.data_edital) AS STRING)"
+        )
+        data_assinatura_filter = (
+            "AND (COALESCE(l.data_homologacao, l.data_abertura, l.data_edital) IS NULL "
+            "OR COALESCE(l.data_homologacao, l.data_abertura, l.data_edital) "
+            "<= CURRENT_DATE() + INTERVAL 365 DAY)"
+        )
+        winners_cte = (
+            "WITH winners AS ("
+            f"SELECT id_licitacao, id_municipio, sigla_uf, orgao, id_unidade_gestora, "
+            "ANY_VALUE(documento) AS winner_document "
+            f"FROM `{dataset}.licitacao_participante` "
+            f"{year_filter_participante} "
+            "AND SAFE_CAST(vencedor AS INT64) = 1 "
+            "GROUP BY id_licitacao, id_municipio, sigla_uf, orgao, id_unidade_gestora"
+            ") "
+        )
+        queries = {
+            "licitacao.csv": (
+                winners_cte
+                + "SELECT "
+                "CAST(l.id_licitacao AS STRING) AS licitacao_id, "
+                "CAST(l.id_licitacao_bd AS STRING) AS id_licitacao, "
+                "CAST(l.id_licitacao AS STRING) AS numero_processo, "
+                "CAST(l.id_municipio AS STRING) AS cod_ibge, "
+                "CAST('' AS STRING) AS municipio, "
+                "CAST(l.sigla_uf AS STRING) AS estado, "
+                "CAST(l.modalidade AS STRING) AS modalidade, "
+                "CAST(l.descricao_objeto AS STRING) AS objeto, "
+                f"{data_publicacao_expr} AS data_publicacao, "
+                "CAST(l.ano AS STRING) AS ano, "
+                f"{valor_estimado_expr} AS valor_estimado, "
+                f"{valor_expr} AS valor, "
+                "CAST(w.winner_document AS STRING) AS cnpj_vencedor, "
+                "CAST('https://basedosdados.org/dataset/world-wb-mides' AS STRING) AS url "
+                f"FROM `{dataset}.licitacao` l "
+                "LEFT JOIN winners w "
+                "ON w.id_licitacao = l.id_licitacao "
+                "AND w.id_municipio = l.id_municipio "
+                "AND w.sigla_uf = l.sigla_uf "
+                "AND w.orgao = l.orgao "
+                "AND w.id_unidade_gestora = l.id_unidade_gestora "
+                f"{year_filter_licitacao} "
+                f"{data_publicacao_filter}"
+            ),
+            "contrato.csv": (
+                winners_cte
+                + "SELECT "
+                "CAST(l.id_licitacao AS STRING) AS contrato_id, "
+                "CAST(l.id_licitacao AS STRING) AS numero_contrato, "
+                "CAST(l.id_licitacao AS STRING) AS licitacao_id, "
+                "CAST(l.id_licitacao AS STRING) AS numero_processo, "
+                "CAST(l.id_municipio AS STRING) AS cod_ibge, "
+                "CAST('' AS STRING) AS municipio, "
+                "CAST(l.sigla_uf AS STRING) AS estado, "
+                f"{data_assinatura_expr} AS data_assinatura, "
+                "CAST(l.descricao_objeto AS STRING) AS objeto, "
+                f"{valor_expr} AS valor, "
+                "CAST(w.winner_document AS STRING) AS cnpj_fornecedor, "
+                "CAST('https://basedosdados.org/dataset/world-wb-mides' AS STRING) AS url "
+                f"FROM `{dataset}.licitacao` l "
+                "LEFT JOIN winners w "
+                "ON w.id_licitacao = l.id_licitacao "
+                "AND w.id_municipio = l.id_municipio "
+                "AND w.sigla_uf = l.sigla_uf "
+                "AND w.orgao = l.orgao "
+                "AND w.id_unidade_gestora = l.id_unidade_gestora "
+                f"{year_filter_licitacao} "
+                f"{data_assinatura_filter}"
+            ),
+            "item.csv": (
+                "SELECT "
+                "CAST(i.id_licitacao AS STRING) AS contrato_id, "
+                "CAST(i.id_licitacao AS STRING) AS licitacao_id, "
+                "CAST(i.id_item_bd AS STRING) AS id_item, "
+                "CAST(i.numero AS STRING) AS numero_item, "
+                "CAST(i.descricao AS STRING) AS descricao, "
+                "CAST(i.quantidade AS FLOAT64) AS quantidade, "
+                "CAST(i.valor_unitario AS FLOAT64) AS valor_unitario, "
+                "CAST(COALESCE(i.valor_total, i.valor_vencedor) AS FLOAT64) AS valor_total, "
+                "CAST(i.documento AS STRING) AS cnpj_vencedor "
+                f"FROM `{dataset}.licitacao_item` i "
+                f"{year_filter_items}"
+            ),
+        }
+    else:
+        profile = "legacy_br_mides"
+        year_filter = f"WHERE SAFE_CAST(ano AS INT64) BETWEEN {start_year} AND {end_year}"
+        queries = {
+            "licitacao.csv": f"SELECT * FROM `{dataset}.licitacao` {year_filter}",
+            "contrato.csv": f"SELECT * FROM `{dataset}.contrato` {year_filter}",
+            "item.csv": f"SELECT * FROM `{dataset}.item` {year_filter}",
+        }
 
-    queries = {
-        "licitacao.csv": (
-            f"SELECT * FROM `{dataset}.licitacao` {year_filter}"
-        ),
-        "contrato.csv": (
-            f"SELECT * FROM `{dataset}.contrato` {year_filter}"
-        ),
-        "item.csv": (
-            f"SELECT * FROM `{dataset}.item` {year_filter}"
-        ),
-    }
+    logger.info("MiDES download profile=%s dataset=%s", profile, dataset)
 
     tables: list[dict[str, Any]] = []
 
