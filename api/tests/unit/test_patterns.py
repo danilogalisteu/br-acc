@@ -5,7 +5,9 @@ from httpx import AsyncClient
 
 from icarus.config import settings
 from icarus.models.pattern import PATTERN_METADATA
-from icarus.services.pattern_service import PATTERN_QUERIES
+
+pattern_service = pytest.importorskip("icarus.services.pattern_service")
+PATTERN_QUERIES = pattern_service.PATTERN_QUERIES
 
 
 @pytest.fixture(autouse=True)
@@ -113,7 +115,6 @@ def test_patrimony_query_guards_divide_by_zero() -> None:
 def test_pattern_queries_use_parameter_binding() -> None:
     """All pattern .cypher files must use $entity_id parameter binding, not string interpolation."""
     from icarus.services.neo4j_service import CypherLoader
-    from icarus.services.pattern_service import PATTERN_QUERIES
 
     for _pattern_id, query_name in PATTERN_QUERIES.items():
         try:

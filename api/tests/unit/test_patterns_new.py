@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from icarus.services.pattern_service import PATTERN_QUERIES, run_pattern
+PatternModule = pytest.importorskip("icarus.services.pattern_service")
+PATTERN_QUERIES = PatternModule.PATTERN_QUERIES
+run_pattern = PatternModule.run_pattern
 
 
 def test_debtor_contracts_registered() -> None:

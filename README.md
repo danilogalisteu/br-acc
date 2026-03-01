@@ -2,10 +2,11 @@
 
 [![WTG Header](docs/brand/wtg-header.png)](docs/brand/wtg-header.png)
 
-[![CI](https://github.com/brunoclz/world-transparency-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/brunoclz/world-transparency-graph/actions/workflows/ci.yml)
+[![CI](https://github.com/brunoclz/br-acc/actions/workflows/ci.yml/badge.svg)](https://github.com/brunoclz/br-acc/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 WTG is an open-source graph infrastructure for public data intelligence.
+Website: [bracc.org](https://bracc.org)
 
 This repository contains the full code for the WTG public edition. The pattern engine is temporarily disabled pending validation.
 
